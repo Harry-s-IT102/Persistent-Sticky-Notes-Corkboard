@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Week 7 Assignment: Persistent Sticky Notes</title>
+    <style>
+        /* Corkboard Texture */
+        body { 
+            font-family: system-ui, sans-serif; 
+            margin: 0; 
+            padding: 2rem; 
+            /* Realistic Cork Background using CSS gradients */
+            background-color: #c99a6c;
+            background-image: 
+                radial-gradient(#b88759 15%, transparent 16%),
+                radial-gradient(#b88759 15%, transparent 16%);
+            background-size: 8px 8px;
+            background-position: 0 0, 4px 4px;
+        }
+        .dashboard { max-width: 900px; margin: 0 auto; }
+        
+        header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-bottom: 3px dashed #7a542b; padding-bottom: 1rem; margin-bottom: 2rem; 
+            background: rgba(255, 255, 255, 0.85); /* Slightly transparent white backing for readability */
+            padding: 1rem;
+            border-radius: 8px;
+        }
+
+        .control-panel { display: flex; gap: 0.5rem; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        textarea { width: 250px; height: 60px; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; resize: none; }
+        button { background: #ffc107; color: #212529; border: none; padding: 0.5rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: bold; }
+        button:hover { background: #e0a800; }
+        
+        /* Corkboard Grid layout */
+        .corkboard { 
+            position: relative; 
+            min-height: 500px; /* Gives the board room to breathe */
+            padding: 20px;
+        }
+          .sticky-note { 
+          position: absolute; 
+          width: 200px;       /* Keeps size consistent */
+          height: 180px;      /* Keeps size consistent */
+          cursor: move;       
+          padding: 1.8rem 1.2rem 1.2rem; 
+          box-shadow: 5px 5px 10px rgba(0,0,0,0.3); 
+          /* Keep your existing rotations... */
+          transition: box-shadow 0.15s; 
+          display: flex; flex-direction: column; justify-content: space-between; border-radius: 2px; 
+       }
+        /* Keep the organic rotations */
+        .sticky-note:nth-child(even) { transform: rotate(1.5deg); }
+        .sticky-note:nth-child(3n) { transform: rotate(-2deg); }
+        .sticky-note:hover { transform: scale(1.05) rotate(0deg); box-shadow: 8px 8px 15px rgba(0,0,0,0.4); z-index: 10; }
+        
+        .note-text { font-size: 1.05rem; color: #333; word-break: break-word; line-height: 1.4; }
+        .note-footer { display: flex; justify-content: flex-start; align-items: center; margin-top: 1rem; font-size: 0.75rem; color: rgba(0,0,0,0.5); }
+        
+        /* Thumbtack Styling */
+        .thumbtack { 
+            position: absolute; 
+            top: -12px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            font-size: 1.8rem; 
+            cursor: pointer; 
+            transition: transform 0.2s;
+            filter: drop-shadow(0px 3px 2px rgba(0,0,0,0.4));
+        }
+        .thumbtack:hover { 
+            transform: translateX(-50%) scale(1.2); 
+            filter: drop-shadow(0px 5px 4px rgba(0,0,0,0.5));
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <header>
+            <h2>📌 Corporate Corkboard Planner</h2>
+            <div class="control-panel">
+                <textarea id="noteInput" placeholder="Type a reminder note here..."></textarea>
+
+                <!-- NEW: Color Picker Dropdown -->
+                <select id="noteColor">
+                    <option value="#fff799">Yellow</option>
+                    <option value="#fffed1">Light Yellow</option>
+                    <option value="#bae1ff">Blue</option>
+                    <option value="#baffc9">Green</option>
+                    <option value="#90EE90">Neon Green</option>
+                    <option value="#f4ccff">Purple</option>
+                    <option value="#ffffff">White</option>
+                    <option value="#ffb3ba">Pink</option>
+                    <option value="#FF8C69">Salmon</option>
+                </select>
+
+                <button id="addNoteBtn">Pin Note</button>
+            </div>
+        </header>
+        
+        <!-- Render Target Area -->
+        <div id="corkboardDisplay" class="corkboard">
+            <!-- Dynamic sticky notes inject here -->
+        </div>
+    </div>
+
+    <script>
+        // GLOBAL APPLICATION STATE
+        let notesState = [];
+
+        // DOM Elements
+        const noteInput = document.getElementById("noteInput");
+        const noteColor = document.getElementById("noteColor");
+        const addNoteBtn = document.getElementById("addNoteBtn");
+        const corkboardDisplay = document.getElementById("corkboardDisplay");
+
+        // --- STORAGE FUNCTIONS ---
+        function saveNotesToStorage(notesArray) {
+            const jsonString = JSON.stringify(notesArray);
+            localStorage.setItem("boardNotesData", jsonString);
+        }
+
+        function loadNotesFromStorage() {
+            const storedData = localStorage.getItem("boardNotesData");
+            if (storedData !== null) {
+                return JSON.parse(storedData);
+            } else {
+                return [];
+            }
+        }
+
+        // --- 2. DELETE FUNCTION (Added here) ---
+        function deleteNote(idToDelete) {
+            notesState = notesState.filter(function(note) {
+                return note.id !== idToDelete;
+            });
+            saveNotesToStorage(notesState);
+            renderBoard();
+        }
+
+        // --- NEW: UPDATED DRAG FUNCTION ---
+          function makeDraggable(noteElement, noteObj) {
+          let isDragging = false;
+          let offsetX, offsetY;
+
+       noteElement.addEventListener('mousedown', (e) => {
+         isDragging = true;
+         offsetX = e.clientX - noteElement.offsetLeft;
+         offsetY = e.clientY - noteElement.offsetTop;
+          noteElement.style.zIndex = 1000;
+         });
+
+         document.addEventListener('mousemove', (e) => {
+         if (!isDragging) return;
+         noteElement.style.left = (e.clientX - offsetX) + 'px';
+         noteElement.style.top = (e.clientY - offsetY) + 'px';
+         });
+
+         document.addEventListener('mouseup', () => {
+         if (!isDragging) return;
+         isDragging = false;
+         noteElement.style.zIndex = '';
+        
+         // SAVE LOCATION TO STATE
+         noteObj.x = noteElement.style.left;
+         noteObj.y = noteElement.style.top;
+         saveNotesToStorage(notesState); 
+         });
+        }
+
+           // --- UPDATED RENDER FUNCTION ---
+        function renderBoard() {
+            // 1. Clear the board
+            corkboardDisplay.innerHTML = "";
+
+            // 2. Loop through state and build each note properly
+            notesState.forEach(function(note) {
+                const bgColor = note.color ? note.color : "#fff799";
+                
+                // Use saved coordinates or default
+                const left = note.x ? note.x : "20px";
+                const top = note.y ? note.y : "20px";
+
+                // Create the note element
+                const noteDiv = document.createElement('div');
+                noteDiv.className = 'sticky-note';
+                noteDiv.id = `note-${note.id}`;
+                noteDiv.style.backgroundColor = bgColor;
+                noteDiv.style.left = left;
+                noteDiv.style.top = top;
+                
+                // Add the content (thumbtack and text)
+                noteDiv.innerHTML = `
+                    <div class="thumbtack" onclick="deleteNote(${note.id})" title="Click to remove note">📌</div>
+                    <div class="note-text">${note.content}</div>
+                `;
+                
+                // Add to the board
+                corkboardDisplay.appendChild(noteDiv);
+                
+                // Attach dragging to this specific element
+                makeDraggable(noteDiv, note);
+            });
+        }
+
+        // --- WIRE UP INPUT ACTIONS ---
+        addNoteBtn.addEventListener("click", function() {
+            const valueText = noteInput.value.trim();
+
+            if (valueText !== "") {
+                // --- 4. UPDATED NEWNOTE CREATION ---
+                const newNote = { 
+                    id: Date.now(), 
+                    content: valueText,
+                    color: noteColor.value // This captures the selection from your dropdown
+                };
+
+                notesState.push(newNote);
+
+                saveNotesToStorage(notesState); 
+                renderBoard();                  
+                noteInput.value = "";           
+            }
+        });
+
+        // --- INITIALIZATION ---
+        notesState = loadNotesFromStorage();
+        renderBoard();
+    </script>
+</body>
+</html>
